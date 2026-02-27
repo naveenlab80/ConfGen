@@ -1,0 +1,34 @@
+{# NTP Configuration Template for Juniper EX4100 / EX4400 #}
+{# Required vars:                                              #}
+{#   ntp_servers: [{address, version, prefer (bool),          #}
+{#                  routing_instance (opt)}]                   #}
+{#   ntp_authentication: [{key_number, type, secret}]         #}
+{#   timezone: e.g. "Europe/London" or "UTC"                   #}
+
+{# --- Timezone --- #}
+set system time-zone {{ timezone | default('UTC') }}
+
+{# --- NTP Authentication Keys --- #}
+{% for key in ntp_auth_keys | default([]) %}
+set ntp authentication-key {{ key.key_number }} type {{ key.type | default('sha1') }} value "{{ key.secret }}"
+{% endfor %}
+{% if ntp_auth_keys | default([]) | length > 0 %}
+set ntp authenticate
+set ntp trusted-key [ {% for key in ntp_auth_keys %}{{ key.key_number }}{% if not loop.last %} {% endif %}{% endfor %} ]
+{% endif %}
+
+{# --- NTP Servers --- #}
+{% for server in ntp_servers %}
+set ntp server {{ server.address }}{% if server.version is defined %} version {{ server.version }}{% endif %}{% if server.prefer | default(false) %} prefer{% endif %}{% if server.routing_instance is defined %} routing-instance {{ server.routing_instance }}{% endif %}
+
+{% endfor %}
+
+{# --- NTP Source Address (management interface) --- #}
+{% if ntp_source_address is defined %}
+set ntp source-address {{ ntp_source_address }}
+{% endif %}
+
+{# --- Boot Server (optional) --- #}
+{% if ntp_boot_server is defined %}
+set ntp boot-server {{ ntp_boot_server }}
+{% endif %}

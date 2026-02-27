@@ -1,0 +1,59 @@
+{# TACACS+ Configuration Template for Juniper EX4100 / EX4400   #}
+{# Required vars:                                                  #}
+{#   tacacs_servers: [{address, secret, port (opt),               #}
+{#                     routing_instance (opt), single_connection}] #}
+{#   tacacs_source_address (opt)                                   #}
+{#   tacacs_timeout: seconds (default 5)                           #}
+{#   tacacs_accounting: bool                                        #}
+
+{# --- TACACS+ Servers --- #}
+{% for server in tacacs_servers %}
+set system tacplus-server {{ server.address }} secret "{{ server.secret }}"
+set system tacplus-server {{ server.address }} port {{ server.port | default(49) }}
+set system tacplus-server {{ server.address }} timeout {{ server.timeout | default(tacacs_timeout | default(5)) }}
+{% if server.routing_instance is defined %}
+set system tacplus-server {{ server.address }} routing-instance {{ server.routing_instance }}
+{% endif %}
+{% if server.single_connection | default(true) %}
+set system tacplus-server {{ server.address }} single-connection
+{% endif %}
+{% endfor %}
+
+{# --- Source Address --- #}
+{% if tacacs_source_address is defined %}
+set system tacplus-options tacplus-server-timeout {{ tacacs_timeout | default(5) }}
+set system tacplus-options source-address {{ tacacs_source_address }}
+{% endif %}
+
+{# --- Authentication / Accounting Order --- #}
+set system authentication-order [ tacplus password ]
+
+{% if tacacs_accounting | default(true) %}
+{# --- Command Accounting --- #}
+set system accounting events [ login change-log interactive-commands ]
+set system accounting destination tacplus
+{% endif %}
+
+{# --- Local Fallback Users (break-glass) --- #}
+{# These ensure access if TACACS+ is unreachable                   #}
+{% for user in tacacs_fallback_users | default([]) %}
+set system login user {{ user.name }} class {{ user.class | default('super-user') }}
+{% if user.ssh_key is defined %}
+set system login user {{ user.name }} authentication ssh-rsa "{{ user.ssh_key }}"
+{% endif %}
+{% if user.password is defined %}
+set system login user {{ user.name }} authentication encrypted-password "{{ user.password }}"
+{% endif %}
+{% endfor %}
+
+{# --- TACACS+ Login Class Mapping (remote users) --- #}
+{# Maps TACACS priv-lvl or groups to Junos login classes           #}
+{% for mapping in tacacs_class_mappings | default([]) %}
+set system login class {{ mapping.class }} permissions {{ mapping.permissions | join(' ') }}
+{% if mapping.allow_commands is defined %}
+set system login class {{ mapping.class }} allow-commands "{{ mapping.allow_commands }}"
+{% endif %}
+{% if mapping.deny_commands is defined %}
+set system login class {{ mapping.class }} deny-commands "{{ mapping.deny_commands }}"
+{% endif %}
+{% endfor %}

@@ -1,0 +1,105 @@
+# Juniper EX Switch Configuration
+# Generated from Excel template
+# Switch Serial Number: ABC123456789
+############################################################
+
+# System Configuration
+set system host-name ex-switch-01
+set system domain-name example.com
+set system root-authentication encrypted-password "encrypted_password_here"
+set system time-zone America/New_York
+set system name-server 8.8.8.8
+set system name-server 8.8.4.4
+set system login message "Unauthorized access prohibited"
+
+# NTP Configuration
+set system ntp server time.nist.gov prefer
+set system ntp server time.google.com
+set system ntp server pool.ntp.org
+
+# Syslog Configuration
+set system syslog host syslog.example.com any info
+set system syslog host 10.1.1.10 any warning
+
+# TACACS+ Configuration
+set system tacplus-server tacacs.example.com secret "shared_secret_key"
+set system tacplus-server tacacs.example.com port 49
+set system tacplus-server 10.2.2.20 secret "backup_secret_key"
+set system tacplus-server 10.2.2.20 port 49
+
+# VLAN Configuration
+set vlans Management vlan-id 10
+set vlans Management l3-interface irb.10
+set vlans Data vlan-id 20
+set vlans Data l3-interface irb.20
+set vlans Voice vlan-id 30
+set vlans Voice l3-interface irb.30
+set vlans Native vlan-id 99
+
+# IRB Interface Configuration
+set interfaces irb unit 10 description "Management Interface"
+set interfaces irb unit 10 family inet address 10.1.10.1/24
+set interfaces irb unit 20 description "Data Interface"
+set interfaces irb unit 20 family inet address 10.1.20.1/24
+set interfaces irb unit 30 description "Voice Interface"
+set interfaces irb unit 30 family inet address 10.1.30.1/24
+
+# Interface Configuration
+set interfaces ge-0/0/0 description "Uplink to Core"
+set interfaces ge-0/0/0 speed 1g
+set interfaces ge-0/0/0 link-mode full-duplex
+set interfaces ge-0/0/0 unit 0 family ethernet-switching
+set interfaces ge-0/0/0 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/0 unit 0 family ethernet-switching vlan members [10 20 30]
+set interfaces ge-0/0/0 native-vlan-id 99.0
+set interfaces ge-0/0/1 description "Server Port 1"
+set interfaces ge-0/0/1 speed 1g
+set interfaces ge-0/0/1 link-mode full-duplex
+set interfaces ge-0/0/1 unit 0 family ethernet-switching
+set interfaces ge-0/0/1 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/1 unit 0 family ethernet-switching vlan members 20
+set interfaces ge-0/0/2 description "Server Port 2"
+set interfaces ge-0/0/2 speed 1g
+set interfaces ge-0/0/2 link-mode full-duplex
+set interfaces ge-0/0/2 unit 0 family ethernet-switching
+set interfaces ge-0/0/2 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/2 unit 0 family ethernet-switching vlan members 20
+set interfaces ge-0/0/3 description "IP Phone"
+set interfaces ge-0/0/3 speed 1g
+set interfaces ge-0/0/3 link-mode full-duplex
+set interfaces ge-0/0/3 unit 0 family ethernet-switching
+set interfaces ge-0/0/3 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/3 unit 0 family ethernet-switching vlan members 30
+set interfaces ge-0/0/4 description "Management"
+set interfaces ge-0/0/4 speed 1g
+set interfaces ge-0/0/4 link-mode full-duplex
+set interfaces ge-0/0/4 unit 0 family ethernet-switching
+set interfaces ge-0/0/4 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/4 unit 0 family ethernet-switching vlan members 10
+set interfaces ge-0/0/47 description "Unused Port"
+set interfaces ge-0/0/47 unit 0 family ethernet-switching
+set interfaces ge-0/0/47 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/47 unit 0 family ethernet-switching vlan members 99
+set interfaces ge-0/0/47 disable
+
+# Management Interface Configuration
+set interfaces me0 description "Out-of-band management"
+set interfaces me0 unit 0 family inet address 192.168.1.10/24
+set routing-options static route 0.0.0.0/0 next-hop 192.168.1.1
+
+# Security Hardening Configuration
+set system services ssh protocol-version v2
+set system services ssh root-login deny
+set system services ssh connection-limit 10
+set system services ssh rate-limit 5
+set system authentication-order [ tacplus,password ]
+
+# IDS Screen Configuration
+set security screen ids-option untrust-screen icmp-flood threshold 3000
+set security screen ids-option untrust-screen udp-flood threshold 3000
+set security screen ids-option untrust-screen syn-flood threshold 200
+
+# SNMP Configuration
+set snmp community public_ro authorization read-only
+set snmp v3 usm local-engine user snmpv3user authentication-md5 authentication-password "auth_password"
+set snmp v3 usm local-engine user snmpv3user privacy-aes128 privacy-password "priv_password"

@@ -1,0 +1,55 @@
+{# Syslog Configuration Template for Juniper EX4100 / EX4400  #}
+{# Required vars:                                               #}
+{#   syslog_servers: [{host, port (opt), facility, severity,   #}
+{#                     routing_instance (opt), structured_data,#}
+{#                     explicit_priority}]                      #}
+{#   syslog_source_address (opt): source IP for syslog msgs    #}
+
+{# --- Console Logging (critical only) --- #}
+set system syslog console kernel emergency
+set system syslog console any critical
+
+{# --- Local File Logging --- #}
+set system syslog file messages any notice
+set system syslog file messages authorization info
+set system syslog file messages structured-data
+
+set system syslog file interactive-commands interactive-commands any
+set system syslog file interactive-commands structured-data
+
+set system syslog file security-events authorization any
+set system syslog file security-events kernel any
+set system syslog file security-events firewall any
+set system syslog file security-events structured-data
+set system syslog file security-events archive size 10m files 5
+
+set system syslog file change-log change-log any
+set system syslog file change-log structured-data
+
+{# --- Remote Syslog Servers --- #}
+{% for server in syslog_servers %}
+set system syslog host {{ server.host }} {{ server.facility | default('any') }} {{ server.severity | default('any') }}
+{% if server.port is defined %}
+set system syslog host {{ server.host }} port {{ server.port }}
+{% endif %}
+{% if server.routing_instance is defined %}
+set system syslog host {{ server.host }} routing-instance {{ server.routing_instance }}
+{% endif %}
+{% if server.structured_data | default(true) %}
+set system syslog host {{ server.host }} structured-data
+{% endif %}
+{% if server.explicit_priority | default(true) %}
+set system syslog host {{ server.host }} explicit-priority
+{% endif %}
+{% if server.allow_duplicates | default(false) %}
+set system syslog host {{ server.host }} allow-duplicates
+{% endif %}
+{% endfor %}
+
+{# --- Source Address --- #}
+{% if syslog_source_address is defined %}
+set system syslog source-address {{ syslog_source_address }}
+{% endif %}
+
+{# --- Time Format --- #}
+set system syslog time-format year

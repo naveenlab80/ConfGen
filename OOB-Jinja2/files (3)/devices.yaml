@@ -1,0 +1,446 @@
+# devices.yaml — Input data for Juniper EX config generation
+# Each device entry MUST have a 'serial' field (used as output filename).
+# 'model' should be EX4100 or EX4400.
+
+devices:
+  - serial: FW3523AB0001
+    model: EX4100
+    hostname: sw-access-01
+    domain_name: corp.example.com
+    timezone: Europe/London
+    mgmt_source_address: 10.0.0.11
+
+    # ── NTP ──────────────────────────────────────────────────────────
+    ntp_source_address: 10.0.0.11
+    ntp_auth_keys:
+      - key_number: 1
+        type: sha1
+        secret: "NTPsecretKey123!"
+    ntp_servers:
+      - address: 10.0.0.1
+        version: 4
+        prefer: true
+      - address: 10.0.0.2
+        version: 4
+
+    # ── SNMPv3 ───────────────────────────────────────────────────────
+    snmp_location: "DC1-Floor2-Rack5"
+    snmp_contact: "netops@corp.example.com"
+    snmp_engine_id: "0x0102030405"
+    disable_legacy_snmp: true
+    snmpv3_users:
+      - name: snmpv3user
+        auth_pass: "AuthPass@2024!"
+        priv_pass: "PrivPass@2024!"
+        group: snmp-read-group
+    snmpv3_groups:
+      - name: snmp-read-group
+        read_view: all-view
+        notify_view: all-view
+    snmpv3_views:
+      - name: all-view
+        oid: "1"
+    snmpv3_targets:
+      - name: nms-server
+        address: 10.0.0.100
+        port: 162
+        tag: trap-tag
+        security_name: snmpv3user
+        notify_filter: all
+
+    # ── Syslog ───────────────────────────────────────────────────────
+    syslog_source_address: 10.0.0.11
+    syslog_servers:
+      - host: 10.0.0.200
+        facility: any
+        severity: any
+        port: 514
+        structured_data: true
+        explicit_priority: true
+      - host: 10.0.0.201
+        facility: any
+        severity: notice
+        structured_data: true
+
+    # ── TACACS+ ──────────────────────────────────────────────────────
+    tacacs_source_address: 10.0.0.11
+    tacacs_timeout: 5
+    tacacs_accounting: true
+    tacacs_servers:
+      - address: 10.0.0.50
+        secret: "TacacsSecret123!"
+        single_connection: true
+      - address: 10.0.0.51
+        secret: "TacacsSecret123!"
+        single_connection: true
+    tacacs_fallback_users:
+      - name: emergency
+        class: super-user
+        password: "$6$rounds=65536$..."  # pre-hashed SHA-512
+    tacacs_class_mappings:
+      - class: read-only
+        permissions: [view, view-configuration]
+        deny_commands: "(request|set|delete|rename|copy|load|save|start|stop|run|restart)"
+      - class: network-admin
+        permissions: [all]
+
+    # ── System Hardening ─────────────────────────────────────────────
+    login_banner: "AUTHORIZED ACCESS ONLY. Unauthorized access is prohibited and monitored."
+    root_auth_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAA... netops-jumphost"
+    admin_users:
+      - name: netadmin
+        class: super-user
+        ssh_key: "ssh-rsa AAAAB3NzaC1yc2EAAA... netadmin"
+    ssh_allowed_prefixes:
+      - "10.0.0.0/24"
+      - "172.16.10.0/24"
+    snmp_allowed_prefixes:
+      - "10.0.0.100/32"
+      - "10.0.0.101/32"
+    tacacs_allowed_prefixes:
+      - "10.0.0.50/32"
+      - "10.0.0.51/32"
+    enable_netconf: false
+    disable_web_mgmt: true
+
+    # ── Interfaces (EX4100-48P: ge-0/0/0–47, et-0/0/48–51) ──────────────
+    mgmt_ip: 10.0.0.11/24
+    mgmt_gateway: 10.0.0.254
+    shutdown_unused: true
+    unused_vlan: UNUSED
+    rstp_priority: "32k"
+    rstp_bpdu_block_on_edge: true
+
+    vlans:
+      - name: DATA
+        id: 10
+        description: "User Data VLAN"
+        irb_address: 10.10.10.1/24
+        l3_interface: true
+      - name: VOICE
+        id: 20
+        description: "VoIP VLAN"
+      - name: AP
+        id: 30
+        description: "Wireless APs"
+      - name: MGMT
+        id: 99
+        description: "Infrastructure Management"
+        irb_address: 10.99.0.1/24
+        l3_interface: true
+      - name: UNUSED
+        id: 999
+        description: "Parking VLAN for unused ports"
+
+    storm_control_profiles:
+      - name: access-sc
+        bandwidth_level: 10
+        no_unknown_unicast: true
+      - name: uplink-sc
+        bandwidth_level: 50
+
+    access_ports:
+      - id: 0
+        description: "PC-FLOOR2-DESK001"
+        vlan: DATA
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: low
+      - id: 1
+        description: "PC-FLOOR2-DESK002"
+        vlan: DATA
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: low
+      - id: 2
+        description: "PC-FLOOR2-DESK003"
+        vlan: DATA
+        storm_control: access-sc
+        rstp_edge: true
+      - id: 10
+        description: "PHONE-FLOOR2-001"
+        vlan: VOICE
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: high
+        poe_max_power: 15400
+      - id: 11
+        description: "PHONE-FLOOR2-002"
+        vlan: VOICE
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: high
+      - id: 20
+        description: "AP-FLOOR2-001"
+        vlan: AP
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: high
+        poe_max_power: 30000
+      - id: 21
+        description: "AP-FLOOR2-002"
+        vlan: AP
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: high
+        poe_max_power: 30000
+      - id: 46
+        description: "MGMT-SERVER-01"
+        vlan: MGMT
+        storm_control: access-sc
+        rstp_edge: true
+        poe_disable: true
+      - id: 47
+        description: "MGMT-SERVER-02"
+        vlan: MGMT
+        storm_control: access-sc
+        rstp_edge: true
+        poe_disable: true
+
+    trunk_ports: []
+
+    uplink_ports:
+      - id: 48
+        description: "UPLINK-CORE-SW01-et-0/0/0"
+        mode: trunk
+        vlans: [DATA, VOICE, AP, MGMT]
+        native_vlan: 99
+        speed: 25g
+        storm_control: uplink-sc
+      - id: 49
+        description: "UPLINK-CORE-SW01-et-0/0/1"
+        mode: lacp
+        ae_bundle: ae0
+        speed: 25g
+      - id: 50
+        description: "UPLINK-CORE-SW02-et-0/0/0"
+        mode: lacp
+        ae_bundle: ae0
+        speed: 25g
+      - id: 51
+        description: "UNUSED-DISABLED"
+        mode: trunk
+        vlans: [UNUSED]
+        disabled: true
+
+    lag_groups:
+      - ae_name: ae0
+        description: "LAG-TO-CORE-SW01"
+        lacp_period: fast
+        min_links: 1
+        mode: trunk
+        vlans: [DATA, VOICE, AP, MGMT]
+        native_vlan: 99
+
+  - serial: FW3523AB0002
+    model: EX4400
+    hostname: sw-access-02
+    domain_name: corp.example.com
+    timezone: Europe/London
+    mgmt_source_address: 10.0.0.12
+
+    ntp_source_address: 10.0.0.12
+    ntp_auth_keys:
+      - key_number: 1
+        type: sha1
+        secret: "NTPsecretKey123!"
+    ntp_servers:
+      - address: 10.0.0.1
+        version: 4
+        prefer: true
+      - address: 10.0.0.2
+        version: 4
+
+    snmp_location: "DC1-Floor2-Rack6"
+    snmp_contact: "netops@corp.example.com"
+    snmp_engine_id: "0x0102030406"
+    disable_legacy_snmp: true
+    snmpv3_users:
+      - name: snmpv3user
+        auth_pass: "AuthPass@2024!"
+        priv_pass: "PrivPass@2024!"
+        group: snmp-read-group
+    snmpv3_groups:
+      - name: snmp-read-group
+        read_view: all-view
+        notify_view: all-view
+    snmpv3_views:
+      - name: all-view
+        oid: "1"
+    snmpv3_targets:
+      - name: nms-server
+        address: 10.0.0.100
+        port: 162
+        tag: trap-tag
+        security_name: snmpv3user
+        notify_filter: all
+
+    syslog_source_address: 10.0.0.12
+    syslog_servers:
+      - host: 10.0.0.200
+        facility: any
+        severity: any
+        port: 514
+        structured_data: true
+        explicit_priority: true
+
+    tacacs_source_address: 10.0.0.12
+    tacacs_timeout: 5
+    tacacs_accounting: true
+    tacacs_servers:
+      - address: 10.0.0.50
+        secret: "TacacsSecret123!"
+        single_connection: true
+      - address: 10.0.0.51
+        secret: "TacacsSecret123!"
+        single_connection: true
+    tacacs_fallback_users:
+      - name: emergency
+        class: super-user
+        password: "$6$rounds=65536$..."
+    tacacs_class_mappings:
+      - class: read-only
+        permissions: [view, view-configuration]
+        deny_commands: "(request|set|delete|rename|copy|load|save|start|stop|run|restart)"
+      - class: network-admin
+        permissions: [all]
+
+    login_banner: "AUTHORIZED ACCESS ONLY. Unauthorized access is prohibited and monitored."
+    root_auth_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAA... netops-jumphost"
+    admin_users:
+      - name: netadmin
+        class: super-user
+        ssh_key: "ssh-rsa AAAAB3NzaC1yc2EAAA... netadmin"
+    ssh_allowed_prefixes:
+      - "10.0.0.0/24"
+      - "172.16.10.0/24"
+    snmp_allowed_prefixes:
+      - "10.0.0.100/32"
+    tacacs_allowed_prefixes:
+      - "10.0.0.50/32"
+      - "10.0.0.51/32"
+    enable_netconf: false
+    disable_web_mgmt: true
+
+    # ── Interfaces (EX4400-24P: ge-0/0/0–23, et-0/0/24–27) ──────────────
+    mgmt_ip: 10.0.0.12/24
+    mgmt_gateway: 10.0.0.254
+    shutdown_unused: true
+    unused_vlan: UNUSED
+    rstp_priority: "32k"
+    rstp_bpdu_block_on_edge: true
+
+    vlans:
+      - name: DATA
+        id: 10
+        description: "User Data VLAN"
+        irb_address: 10.10.20.1/24
+        l3_interface: true
+      - name: VOICE
+        id: 20
+        description: "VoIP VLAN"
+      - name: AP
+        id: 30
+        description: "Wireless APs"
+      - name: MGMT
+        id: 99
+        description: "Infrastructure Management"
+        irb_address: 10.99.1.1/24
+        l3_interface: true
+      - name: UNUSED
+        id: 999
+        description: "Parking VLAN for unused ports"
+
+    storm_control_profiles:
+      - name: access-sc
+        bandwidth_level: 10
+        no_unknown_unicast: true
+      - name: uplink-sc
+        bandwidth_level: 50
+
+    access_ports:
+      - id: 0
+        description: "PC-FLOOR3-DESK001"
+        vlan: DATA
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: low
+      - id: 1
+        description: "PC-FLOOR3-DESK002"
+        vlan: DATA
+        storm_control: access-sc
+        rstp_edge: true
+      - id: 2
+        description: "PC-FLOOR3-DESK003"
+        vlan: DATA
+        storm_control: access-sc
+        rstp_edge: true
+      - id: 10
+        description: "PHONE-FLOOR3-001"
+        vlan: VOICE
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: high
+        poe_max_power: 15400
+      - id: 11
+        description: "PHONE-FLOOR3-002"
+        vlan: VOICE
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: high
+      - id: 18
+        description: "AP-FLOOR3-001"
+        vlan: AP
+        storm_control: access-sc
+        rstp_edge: true
+        poe_priority: high
+        poe_max_power: 30000
+      - id: 22
+        description: "MGMT-SERVER-03"
+        vlan: MGMT
+        storm_control: access-sc
+        rstp_edge: true
+        poe_disable: true
+      - id: 23
+        description: "MGMT-SERVER-04"
+        vlan: MGMT
+        storm_control: access-sc
+        rstp_edge: true
+        poe_disable: true
+
+    trunk_ports: []
+
+    uplink_ports:
+      - id: 24
+        description: "UPLINK-CORE-SW01-et-0/0/2"
+        mode: trunk
+        vlans: [DATA, VOICE, AP, MGMT]
+        native_vlan: 99
+        speed: 25g
+        storm_control: uplink-sc
+      - id: 25
+        description: "UPLINK-CORE-SW01-et-0/0/3"
+        mode: lacp
+        ae_bundle: ae0
+        speed: 25g
+      - id: 26
+        description: "UPLINK-CORE-SW02-et-0/0/2"
+        mode: lacp
+        ae_bundle: ae0
+        speed: 25g
+      - id: 27
+        description: "UNUSED-DISABLED"
+        mode: trunk
+        vlans: [UNUSED]
+        disabled: true
+
+    lag_groups:
+      - ae_name: ae0
+        description: "LAG-TO-CORE-SW01"
+        lacp_period: fast
+        min_links: 1
+        mode: trunk
+        vlans: [DATA, VOICE, AP, MGMT]
+        native_vlan: 99

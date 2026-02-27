@@ -1,0 +1,216 @@
+{# Interface Configuration Template for Juniper EX4100-48P / EX4400-24P  #}
+{# Required vars:                                                           #}
+{#   model: EX4100 or EX4400                                               #}
+{#   mgmt_ip: management IP with prefix (e.g. 10.0.0.11/24)               #}
+{#   mgmt_gateway: default gateway IP                                       #}
+{#   mgmt_vlan: VLAN ID for OOB management (optional, default none)        #}
+{#   access_ports: list of access port configs                              #}
+{#   trunk_ports: list of trunk port configs                                #}
+{#   uplink_ports: list of uplink/routed port configs                       #}
+{#   vlans: list of {name, id, description}                                 #}
+{#   lag_groups: list of LAG/LACP bundle configs (optional)                 #}
+
+{# ─── Model port ranges ───────────────────────────────────────────────── #}
+{# EX4100-48P : ge-0/0/0  – ge-0/0/47  (48x 1G PoE)                      #}
+{#              et-0/0/48 – et-0/0/51   (4x 25G SFP28 uplinks)            #}
+{# EX4400-24P : ge-0/0/0  – ge-0/0/23  (24x 1G PoE)                      #}
+{#              et-0/0/24 – et-0/0/27   (4x 25G SFP28 uplinks)            #}
+
+{% if model == 'EX4100' %}
+{% set access_range_start = 0 %}
+{% set access_range_end   = 47 %}
+{% set uplink_prefix      = 'et-0/0/' %}
+{% set uplink_range_start = 48 %}
+{% set uplink_range_end   = 51 %}
+{% elif model == 'EX4400' %}
+{% set access_range_start = 0 %}
+{% set access_range_end   = 23 %}
+{% set uplink_prefix      = 'et-0/0/' %}
+{% set uplink_range_start = 24 %}
+{% set uplink_range_end   = 27 %}
+{% endif %}
+
+{# ─── VLANs ───────────────────────────────────────────────────────────── #}
+{% for vlan in vlans %}
+set vlans {{ vlan.name }} vlan-id {{ vlan.id }}
+{% if vlan.description is defined %}
+set vlans {{ vlan.name }} description "{{ vlan.description }}"
+{% endif %}
+{% if vlan.l3_interface is defined %}
+set vlans {{ vlan.name }} l3-interface irb.{{ vlan.id }}
+{% endif %}
+{% endfor %}
+
+{# ─── IRB (L3 SVI) interfaces ─────────────────────────────────────────── #}
+{% for vlan in vlans %}
+{% if vlan.irb_address is defined %}
+set interfaces irb unit {{ vlan.id }} description "SVI-{{ vlan.name }}"
+set interfaces irb unit {{ vlan.id }} family inet address {{ vlan.irb_address }}
+{% if vlan.irb_filter_in is defined %}
+set interfaces irb unit {{ vlan.id }} family inet filter input {{ vlan.irb_filter_in }}
+{% endif %}
+{% endif %}
+{% endfor %}
+
+{# ─── Management Interface (me0 = OOB on EX4100/EX4400) ──────────────── #}
+set interfaces me0 unit 0 description "OOB-MANAGEMENT"
+set interfaces me0 unit 0 family inet address {{ mgmt_ip }}
+{% if mgmt_vrf is defined %}
+set routing-instances {{ mgmt_vrf }} instance-type virtual-router
+set routing-instances {{ mgmt_vrf }} interface me0.0
+set routing-instances {{ mgmt_vrf }} routing-options static route 0.0.0.0/0 next-hop {{ mgmt_gateway }}
+{% else %}
+set routing-options static route 0.0.0.0/0 next-hop {{ mgmt_gateway }}
+{% endif %}
+
+{# ─── Access Ports ────────────────────────────────────────────────────── #}
+{% for port in access_ports %}
+set interfaces ge-0/0/{{ port.id }} description "{{ port.description | default('ACCESS-PORT') }}"
+set interfaces ge-0/0/{{ port.id }} unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/{{ port.id }} unit 0 family ethernet-switching vlan members {{ port.vlan }}
+{% if port.poe_disable | default(false) %}
+set poe interface ge-0/0/{{ port.id }} disable
+{% else %}
+{% if port.poe_priority is defined %}
+set poe interface ge-0/0/{{ port.id }} priority {{ port.poe_priority }}
+{% endif %}
+{% if port.poe_max_power is defined %}
+set poe interface ge-0/0/{{ port.id }} maximum-power {{ port.poe_max_power }}
+{% endif %}
+{% endif %}
+{% if port.storm_control is defined %}
+set interfaces ge-0/0/{{ port.id }} unit 0 family ethernet-switching storm-control {{ port.storm_control }}
+{% else %}
+set interfaces ge-0/0/{{ port.id }} unit 0 family ethernet-switching storm-control default
+{% endif %}
+{% if port.rstp_edge | default(true) %}
+set protocols rstp interface ge-0/0/{{ port.id }} edge
+set protocols rstp interface ge-0/0/{{ port.id }} no-root-port
+{% endif %}
+{% if port.dhcp_trusted | default(false) %}
+set vlans {{ port.vlan }} forwarding-options dhcp-trusted
+{% endif %}
+{% if port.disabled | default(false) %}
+set interfaces ge-0/0/{{ port.id }} disable
+{% endif %}
+{% endfor %}
+
+{# ─── Unused access ports — shutdown & description ────────────────────── #}
+{% if shutdown_unused | default(true) %}
+{% set used_ids = access_ports | map(attribute='id') | list %}
+{% for i in range(access_range_start, access_range_end + 1) %}
+{% if i not in used_ids %}
+set interfaces ge-0/0/{{ i }} description "UNUSED-DISABLED"
+set interfaces ge-0/0/{{ i }} disable
+set interfaces ge-0/0/{{ i }} unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/{{ i }} unit 0 family ethernet-switching vlan members {{ unused_vlan | default('UNUSED') }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{# ─── Trunk Ports ─────────────────────────────────────────────────────── #}
+{% for port in trunk_ports %}
+set interfaces ge-0/0/{{ port.id }} description "{{ port.description | default('TRUNK-PORT') }}"
+set interfaces ge-0/0/{{ port.id }} unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/{{ port.id }} unit 0 family ethernet-switching vlan members [ {% for v in port.vlans %}{{ v }} {% endfor %}]
+{% if port.native_vlan is defined %}
+set interfaces ge-0/0/{{ port.id }} unit 0 family ethernet-switching native-vlan-id {{ port.native_vlan }}
+{% endif %}
+{% if port.storm_control is defined %}
+set interfaces ge-0/0/{{ port.id }} unit 0 family ethernet-switching storm-control {{ port.storm_control }}
+{% endif %}
+{% if port.rstp_edge | default(false) %}
+set protocols rstp interface ge-0/0/{{ port.id }} edge
+{% endif %}
+{% if port.disabled | default(false) %}
+set interfaces ge-0/0/{{ port.id }} disable
+{% endif %}
+{% endfor %}
+
+{# ─── Uplink / SFP28 Ports ────────────────────────────────────────────── #}
+{% for port in uplink_ports %}
+set interfaces {{ uplink_prefix }}{{ port.id }} description "{{ port.description | default('UPLINK') }}"
+{% if port.mode == 'trunk' %}
+set interfaces {{ uplink_prefix }}{{ port.id }} unit 0 family ethernet-switching interface-mode trunk
+set interfaces {{ uplink_prefix }}{{ port.id }} unit 0 family ethernet-switching vlan members [ {% for v in port.vlans %}{{ v }} {% endfor %}]
+{% if port.native_vlan is defined %}
+set interfaces {{ uplink_prefix }}{{ port.id }} unit 0 family ethernet-switching native-vlan-id {{ port.native_vlan }}
+{% endif %}
+{% elif port.mode == 'routed' %}
+set interfaces {{ uplink_prefix }}{{ port.id }} unit 0 family inet address {{ port.ip_address }}
+{% elif port.mode == 'lacp' %}
+set interfaces {{ uplink_prefix }}{{ port.id }} ether-options 802.3ad {{ port.ae_bundle }}
+{% endif %}
+{% if port.speed is defined %}
+set interfaces {{ uplink_prefix }}{{ port.id }} speed {{ port.speed }}
+{% endif %}
+{% if port.autoneg | default(true) %}
+set interfaces {{ uplink_prefix }}{{ port.id }} gigether-options autonegotiation
+{% endif %}
+{% if port.disabled | default(false) %}
+set interfaces {{ uplink_prefix }}{{ port.id }} disable
+{% else %}
+{# Unused uplinks — shutdown #}
+{% endif %}
+{% endfor %}
+
+{# ─── Unused uplink ports shutdown ───────────────────────────────────────#}
+{% if shutdown_unused | default(true) %}
+{% set used_uplink_ids = uplink_ports | map(attribute='id') | list %}
+{% for i in range(uplink_range_start, uplink_range_end + 1) %}
+{% if i not in used_uplink_ids %}
+set interfaces {{ uplink_prefix }}{{ i }} description "UNUSED-DISABLED"
+set interfaces {{ uplink_prefix }}{{ i }} disable
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{# ─── LAG / LACP Bundles (AE interfaces) ──────────────────────────────── #}
+{% for lag in lag_groups | default([]) %}
+set interfaces {{ lag.ae_name }} description "{{ lag.description | default('LAG-BUNDLE') }}"
+set interfaces {{ lag.ae_name }} aggregated-ether-options lacp active
+set interfaces {{ lag.ae_name }} aggregated-ether-options lacp periodic {{ lag.lacp_period | default('fast') }}
+{% if lag.min_links is defined %}
+set interfaces {{ lag.ae_name }} aggregated-ether-options minimum-links {{ lag.min_links }}
+{% endif %}
+{% if lag.mode == 'trunk' %}
+set interfaces {{ lag.ae_name }} unit 0 family ethernet-switching interface-mode trunk
+set interfaces {{ lag.ae_name }} unit 0 family ethernet-switching vlan members [ {% for v in lag.vlans %}{{ v }} {% endfor %}]
+{% if lag.native_vlan is defined %}
+set interfaces {{ lag.ae_name }} unit 0 family ethernet-switching native-vlan-id {{ lag.native_vlan }}
+{% endif %}
+{% elif lag.mode == 'access' %}
+set interfaces {{ lag.ae_name }} unit 0 family ethernet-switching interface-mode access
+set interfaces {{ lag.ae_name }} unit 0 family ethernet-switching vlan members {{ lag.vlan }}
+{% endif %}
+{% endfor %}
+
+{# ─── Global PoE settings ─────────────────────────────────────────────── #}
+{% if poe_management_ip is defined %}
+set poe management-ip-address {{ poe_management_ip }}
+{% endif %}
+{% if poe_guard_band is defined %}
+set poe guard-band {{ poe_guard_band }}
+{% endif %}
+
+{# ─── Storm Control profiles ──────────────────────────────────────────── #}
+{% for sc in storm_control_profiles | default([]) %}
+set forwarding-options storm-control-profiles {{ sc.name }} all bandwidth-level {{ sc.bandwidth_level | default(10) }}
+{% if sc.no_multicast | default(false) %}
+set forwarding-options storm-control-profiles {{ sc.name }} all no-multicast
+{% endif %}
+{% if sc.no_unknown_unicast | default(false) %}
+set forwarding-options storm-control-profiles {{ sc.name }} all no-unknown-unicast
+{% endif %}
+{% endfor %}
+
+{# ─── RSTP global ─────────────────────────────────────────────────────── #}
+set protocols rstp bridge-priority {{ rstp_priority | default('32k') }}
+{% if rstp_bpdu_block_on_edge | default(true) %}
+set protocols rstp bpdu-block-on-edge
+{% endif %}
+
+{# ─── LLDP ────────────────────────────────────────────────────────────── #}
+set protocols lldp port-id-subtype interface-name
+set protocols lldp interface all
+set protocols lldp-med interface all

@@ -1,0 +1,54 @@
+{# SNMPv3 Configuration Template for Juniper EX4100 / EX4400 #}
+{# Required vars: snmp_location, snmp_contact, snmp_engine_id,     #}
+{#   snmpv3_users: [{name, auth_type, auth_pass, priv_type,         #}
+{#     priv_pass, group}]                                           #}
+{#   snmpv3_targets: [{name, address, port, routing_instance,       #}
+{#     version, notify_filter}]                                     #}
+
+{# --- SNMP System Info --- #}
+set snmp location "{{ snmp_location }}"
+set snmp contact "{{ snmp_contact }}"
+{% if snmp_engine_id is defined %}
+set snmp engine-id local {{ snmp_engine_id }}
+{% endif %}
+
+{# --- SNMPv3 USM Users --- #}
+{% for user in snmpv3_users %}
+set snmp v3 usm local-engine user {{ user.name }} authentication-sha authentication-password "{{ user.auth_pass }}"
+set snmp v3 usm local-engine user {{ user.name }} privacy-aes128 privacy-password "{{ user.priv_pass }}"
+{% endfor %}
+
+{# --- SNMPv3 Vacm Access --- #}
+{% for user in snmpv3_users %}
+set snmp v3 vacm security-to-group security-model usm security-name {{ user.name }} group {{ user.group }}
+{% endfor %}
+
+{% for group in snmpv3_groups %}
+set snmp v3 vacm access group {{ group.name }} default-context-prefix security-model usm security-level privacy read-view {{ group.read_view }} notify-view {{ group.notify_view }}
+{% endfor %}
+
+{# --- SNMP MIB Views --- #}
+{% for view in snmpv3_views %}
+set snmp view {{ view.name }} oid {{ view.oid }} include
+{% endfor %}
+
+{# --- SNMPv3 Trap Targets --- #}
+{% for target in snmpv3_targets %}
+set snmp v3 target-address {{ target.name }} address {{ target.address }}
+set snmp v3 target-address {{ target.name }} port {{ target.port | default(162) }}
+set snmp v3 target-address {{ target.name }} tag-list {{ target.tag | default('trap-tag') }}
+{% if target.routing_instance is defined %}
+set snmp v3 target-address {{ target.name }} routing-instance {{ target.routing_instance }}
+{% endif %}
+set snmp v3 target-parameters {{ target.name }} parameters security-model usm security-level privacy security-name {{ target.security_name }}
+set snmp v3 target-parameters {{ target.name }} notify-filter {{ target.notify_filter | default('all') }}
+{% endfor %}
+
+{# --- SNMP Notify --- #}
+set snmp v3 notify trap-notify type trap
+set snmp v3 notify trap-notify tag trap-tag
+
+{# --- Disable SNMPv1/v2 communities (hardening) --- #}
+{% if disable_legacy_snmp | default(true) %}
+delete snmp community
+{% endif %}

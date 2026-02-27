@@ -1,0 +1,126 @@
+{# System Hardening Template for Juniper EX4100 / EX4400        #}
+{# Required vars:                                                 #}
+{#   hostname, domain_name                                        #}
+{#   mgmt_prefix: management subnet (e.g. 10.0.0.0/24)          #}
+{#   ssh_allowed_prefixes: list of CIDRs allowed SSH access      #}
+{#   mgmt_vrf: routing-instance name for OOB (optional)          #}
+{#   login_banner: string (optional)                             #}
+{#   root_auth_keys: list of SSH public key strings              #}
+{#   admin_users: [{name, class, ssh_key (opt), password (opt)}] #}
+
+{# --- Hostname & Domain --- #}
+set system host-name {{ hostname }}
+set system domain-name {{ domain_name }}
+
+{# --- Login Banner --- #}
+{% if login_banner is defined %}
+set system login announcement "{{ login_banner }}"
+{% else %}
+set system login announcement "AUTHORIZED ACCESS ONLY. All activity is monitored and logged. Unauthorized access is prohibited."
+{% endif %}
+
+{# --- Root Authentication (SSH key only, no plain-text password) --- #}
+{% for key in root_auth_keys | default([]) %}
+set system root-authentication ssh-rsa "{{ key }}"
+{% endfor %}
+
+{# --- Password Policy --- #}
+set system login password minimum-length 14
+set system login password change-type set-transitions 0
+set system login password format sha512
+
+{# --- Login Retry / Lockout --- #}
+set system login retry-options tries-before-disconnect 3
+set system login retry-options backoff-threshold 1
+set system login retry-options backoff-factor 5
+set system login retry-options minimum-time 20
+set system login retry-options lockout-period 5
+
+{# --- Admin Users --- #}
+{% for user in admin_users | default([]) %}
+set system login user {{ user.name }} class {{ user.class | default('super-user') }}
+{% if user.ssh_key is defined %}
+set system login user {{ user.name }} authentication ssh-rsa "{{ user.ssh_key }}"
+{% endif %}
+{% if user.password is defined %}
+set system login user {{ user.name }} authentication encrypted-password "{{ user.password }}"
+{% endif %}
+{% endfor %}
+
+{# --- Disable Unused Services --- #}
+set system services ssh root-login deny
+set system services ssh protocol-version v2
+set system services ssh max-sessions-per-connection 1
+set system services ssh connection-limit 5
+set system services ssh rate-limit 5
+set system services ssh ciphers [ aes128-ctr aes192-ctr aes256-ctr ]
+set system services ssh macs [ hmac-sha2-256 hmac-sha2-512 ]
+set system services ssh key-exchange [ ecdh-sha2-nistp256 ecdh-sha2-nistp384 ]
+set system services ssh hostkey-algorithm [ ecdsa-sha2-nistp256 ecdsa-sha2-nistp384 ssh-rsa ]
+delete system services telnet
+delete system services ftp
+delete system services finger
+delete system services rlogin
+delete system services rsh
+
+{# --- NETCONF over SSH (optional) --- #}
+{% if enable_netconf | default(false) %}
+set system services netconf ssh port 830
+{% endif %}
+
+{# --- Web Management (disabled for hardening) --- #}
+{% if disable_web_mgmt | default(true) %}
+delete system services web-management
+{% endif %}
+
+{# --- Management Access Firewall Filter --- #}
+set firewall family inet filter PROTECT-RE term ALLOW-SSH from source-address {% for prefix in ssh_allowed_prefixes %}{{ prefix }} {% endfor %}
+
+set firewall family inet filter PROTECT-RE term ALLOW-SSH from protocol tcp
+set firewall family inet filter PROTECT-RE term ALLOW-SSH from destination-port 22
+set firewall family inet filter PROTECT-RE term ALLOW-SSH then accept
+set firewall family inet filter PROTECT-RE term ALLOW-SNMP from source-address {% for prefix in snmp_allowed_prefixes | default(ssh_allowed_prefixes) %}{{ prefix }} {% endfor %}
+
+set firewall family inet filter PROTECT-RE term ALLOW-SNMP from protocol udp
+set firewall family inet filter PROTECT-RE term ALLOW-SNMP from destination-port 161
+set firewall family inet filter PROTECT-RE term ALLOW-SNMP then accept
+set firewall family inet filter PROTECT-RE term ALLOW-NTP from protocol udp
+set firewall family inet filter PROTECT-RE term ALLOW-NTP from destination-port 123
+set firewall family inet filter PROTECT-RE term ALLOW-NTP then accept
+set firewall family inet filter PROTECT-RE term ALLOW-TACACS from source-address {% for prefix in tacacs_allowed_prefixes | default(ssh_allowed_prefixes) %}{{ prefix }} {% endfor %}
+
+set firewall family inet filter PROTECT-RE term ALLOW-TACACS from protocol tcp
+set firewall family inet filter PROTECT-RE term ALLOW-TACACS from destination-port 49
+set firewall family inet filter PROTECT-RE term ALLOW-TACACS then accept
+set firewall family inet filter PROTECT-RE term ALLOW-ICMP from protocol icmp
+set firewall family inet filter PROTECT-RE term ALLOW-ICMP from icmp-type [ echo-request echo-reply ]
+set firewall family inet filter PROTECT-RE term ALLOW-ICMP then accept
+set firewall family inet filter PROTECT-RE term DENY-ALL then discard
+set firewall family inet filter PROTECT-RE term DENY-ALL then log
+set firewall family inet filter PROTECT-RE term DENY-ALL then syslog
+
+{# --- Apply RE Filter to loopback --- #}
+set interfaces lo0 unit 0 family inet filter input PROTECT-RE
+
+{# --- System Logging (kernel hardening) --- #}
+set system syslog file security-log any any
+set system syslog file security-log structured-data
+
+{# --- AAA / Auth Order --- #}
+set system authentication-order [ tacplus password ]
+
+{# --- NTP / ICMP / DoS hardening --- #}
+set system ddos-protection global bandwidth-scale 10
+set system ddos-protection global burst-scale 10
+
+{# --- Disable chassis cluster (standalone mode) --- #}
+{# Remove if VC or chassis cluster is used                        #}
+{% if disable_chassis_cluster | default(false) %}
+delete chassis cluster
+{% endif %}
+
+{# --- Miscellaneous security --- #}
+set system no-redirects
+set system arp aging-timer 5
+set system internet-options no-source-quench
+set system internet-options no-tcp-reset drop-all-tcp
